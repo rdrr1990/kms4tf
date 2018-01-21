@@ -15,7 +15,7 @@ library(kerasformula)
 library(rtweet)
 library(ggplot2)
 library(dplyr)                 # for %>%, select()
-library(reshape2)              # for melt()
+library(tidyr)                 # for tidyr
 ```
 To get going, make sure that `keras` and `retweet` configured.
 ```{r libraries_display, eval = FALSE}
@@ -30,7 +30,6 @@ library(rtweet)                        # see https://github.com/mkearney/rtweet
 Let's look at #rstats tweets (excluding retweets) for a six-day period ending `r format(Sys.time(), "%B %d, %Y")` at `r format(Sys.time(), "%H:%M")`. This happens to give us a nice reasonable number of observations to work with in terms of runtime (and the purpose of this document is to show syntax, not build particularly predictive models).
 
 ```{r download}
-library(rtweet)
 rstats <- search_tweets("#rstats", n = 10000, include_rts = FALSE)
 dim(rstats)
 ```
@@ -44,8 +43,12 @@ cor(rstats$favorite_count, rstats$retweet_count, method="spearman")
 Since few tweeets go viral, the data are quite skewed towards zero. 
 
 ```{r densities, echo = FALSE}
-rstats %>% select(favorite_count, retweet_count) %>% melt %>%
-ggplot(aes(log10(value + 1), fill=variable)) + geom_density(alpha=0.5) + ggtitle("#rstats tweets")  + theme_minimal()
+rstats %>% 
+  select(favorite_count, retweet_count) %>% 
+  gather(variable, value, everything()) %>%
+  ggplot(aes(log10(value + 1), fill=variable)) + 
+  geom_density(alpha=0.5) + ggtitle("#rstats tweets")  + 
+  theme_minimal()
 ```
 
 # Getting the Most out of Formulas
@@ -73,7 +76,7 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity:",
                                          "out-of-sample accuracy")) + theme_minimal()
 popularity$confusion
 ```
-The model only classifies about `r round(100*popularity$evaluations$acc, 0)`% of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs. 
+The model only classifies about `r scales::percent(popularity$evaluations$acc)` of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs. 
 
 ```{r change_breaks}
 breaks <- c(-1, 0, 1, 25, 50, 75, 100, 500, 1000, 10000)
@@ -108,7 +111,7 @@ grepl("12233344455556", mentions_user_id)
 ```{r add_mentions}
 mentions <- unlist(rstats$mentions_user_id)
 mentions <- unique(mentions[which(table(mentions) > 5)]) # remove infrequent mentions
-mentions <- mentions[-1] # drop NA
+mentions <- mentions[!is.na(mentions)] # drop NA
 
 for(i in mentions)
   pop_input <- paste0(pop_input, " + ", "grepl(", i, ", mentions_user_id)")
@@ -167,6 +170,10 @@ for(i in 1:nrow(accuracy)){
 colMeans(accuracy)
 ```
 For the sake of curtailing runtime, the number of epochs has been set arbitrarily short but, from those results, `r Nbatch[which.max(colMeans(accuracy))]` is the best batch size. 
+
+# Making predictions for new data
+
+TODO
 
 
 # Inputting a Compiled Keras Model

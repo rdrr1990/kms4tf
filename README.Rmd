@@ -53,11 +53,8 @@ ggplot(aes(log10(value + 1), fill=variable)) + geom_density(alpha=0.5) + ggtitle
 Let's suppose we are interested in putting tweets into categories based on popularity but we're not sure how finely-grained we want to make distinctions. Some of the data, like `rstats$mentions_screen_name` comes in a list of varying lengths, so let's write a helper function to count non-NA entries.  
 
 ```{r helper}
-n <- function(x){
-  N <- matrix(nrow = length(x), 0)
-  for(i in which(!is.na(x)))
-    N[i] <- length(x[[i]])
-  return(N)
+n <- function(x) {
+  sapply(x, length)
 }
 ```
 

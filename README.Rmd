@@ -4,27 +4,39 @@ author: "Pete Mohanty"
 output: github_document
 ---
 
-This document introduces `kms`, the main function of `library(kerasformula)`. Newly on `CRAN`, `kerasformula` offers a high-level interface for `library(keras)`. Many classic machine learning  tutorials assume that data come in a relatively homogenous form (e.g., pixels for digit recognition or word counts or ranks) which can make coding somewhat cumbersome when data come in a heterogenous data frame. `kms` takes advantage of the flexibility of R formulas to smooth this process. 
+```{r setup}
+library(knitr)
+opts_chunk$set(comment = "", message = FALSE, warning = FALSE)
+```
+
+## Overview
+
+The [kerasformula](https://cran.r-project.org/web/packages/kerasformula/index.html) package offers a high-level interface for the R interface to [Keras](https://keras.rstudio.com). It's main interface is the `kms` function, a regression-style interface to `keras_model_sequential` that uses formulas and sparse matrices.
+
+The [kerasformula](https://cran.r-project.org/web/packages/kerasformula/index.html) package is available on CRAN, and can be installed with:
+
+```{r, eval=FALSE}
+# install the kerasformula package
+install.packages("kerasformula")
+
+# install the core keras library (if you haven't already done so)
+# see ?install_keras() for options e.g. install_keras(tensorflow = "gpu")
+library(keras)
+install_keras()
+```
+
+## The kms() function
+
+Many classic machine learning tutorials assume that data come in a relatively homogenous form (e.g., pixels for digit recognition or word counts or ranks) which can make coding somewhat cumbersome when data is contained in a heterogenous data frame. `kms()` takes advantage of the flexibility of R formulas to smooth this process. 
 
 `kms` builds dense neural nets and, after fitting them, returns a single object with predictions, measures of fit, and details about the function call. `kms` accepts a number of parameters including the loss and activation functions found in `keras`. `kms` also accepts compiled `keras_model_sequential` objects allowing for even further customization. This little demo shows how `kms` can aid is model building and hyperparameter selection (e.g., batch size) starting with raw data gathered using `library(rtweet)`.
 
 ```{r libraries, echo=FALSE, message=FALSE, warning=FALSE}
-library(knitr)
-opts_chunk$set(comment = "", message = FALSE, warning = FALSE)
 library(kerasformula)
-library(rtweet)
+library(rtweet)                # see https://github.com/mkearney/rtweet
 library(ggplot2)
 library(dplyr)                 # for %>%, select()
 library(tidyr)                 # for tidyr
-```
-To get going, make sure that `keras` and `retweet` configured.
-```{r libraries_display, eval = FALSE}
-install.packages("kerasformula", "rtweet")
-library(kerasformula)
-install_keras()                        # first time only. see ?install_keras() for install options
-                                       # like install_keras(tensorflow = "gpu")
-
-library(rtweet)                        # see https://github.com/mkearney/rtweet
 ```
 
 Let's look at #rstats tweets (excluding retweets) for a six-day period ending `r format(Sys.time(), "%B %d, %Y")` at `r format(Sys.time(), "%H:%M")`. This happens to give us a nice reasonable number of observations to work with in terms of runtime (and the purpose of this document is to show syntax, not build particularly predictive models).
@@ -51,7 +63,7 @@ rstats %>%
   theme_minimal()
 ```
 
-# Getting the Most out of Formulas
+## Getting the most out of formulas
 
 Let's suppose we are interested in putting tweets into categories based on popularity but we're not sure how finely-grained we want to make distinctions. Some of the data, like `rstats$mentions_screen_name` comes in a list of varying lengths, so let's write a helper function to count non-NA entries.  
 
@@ -76,6 +88,7 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity:",
                                          "out-of-sample accuracy")) + theme_minimal()
 popularity$confusion
 ```
+
 The model only classifies about `r scales::percent(popularity$evaluations$acc)` of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs. 
 
 ```{r change_breaks}
@@ -103,6 +116,7 @@ pop_input <- "cut(retweet_count + favorite_count, breaks) ~
                           weekdays(created_at) + 
                           format(created_at, '%H')"
 ```
+
 Here we use `paste0` to add to the formula by looping over user IDs adding something like:
 ```
 grepl("12233344455556", mentions_user_id)
@@ -126,15 +140,18 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity (with 'mentions'):",
                                          "out-of-sample accuracy"))  + theme_minimal()
 ```
 
-# Customizing Layers with kms()
+## Customizing layers with kms()
 
 We could add more data, perhaps add individual words from the text or some other summary stat (`mean(text %in% LETTERS)` to see if all caps explains popularity). But let's alter the neural net.
 
 The `input.formula` is used to create a sparse model matrix. For example, `rstats$source` (Twitter or Twitter-client application type) and `rstats$screen_name` are character vectors that will be dummied out. How many columns does it have?
+
 ```{r}
 popularity$P
 ```
+
 Say we wanted to reshape the layers to transition more gradually from the input shape to the output. 
+
 ```{r custom_dense}
 popularity <- kms(pop_input, rstats,
                   layers = list(units = c(1024, 512, 256, 128, NA),
@@ -150,7 +167,7 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity (custom dense neural
 
 `kms` builds a `keras_sequential_model()`, which is a stack of linear layers. The input shape is determined by the dimensionality of the model matrix (`popularity$P`) but after that users are free to determine the number of layers and so on. The `kms` argument `layers` expects a list, the first entry of which is a vector `units` with which to call `keras::layer_dense()`. The first element the number of `units` in the first layer, the second element for the second layer, and so on (`NA` as the final element connotes to auto-detect the final number of units based on the observed number of outcomes). `activation` is also passed to `layer_dense()` and may take values such as `softmax`, `relu`, `elu`, and `linear`. (`kms` also has a separate parameter to control the optimizer; by default `kms(... optimizer = 'rms_prop')`.) The `dropout` that follows each dense layer rate prevents overfitting (but of course isn't applicable to the final layer).
 
-# Choosing a Batch Size
+## Choosing a Batch Size
 
 By default, `kms` uses batches of 32. Suppose we were happy with our model but didn't have any particular intuition about what the size should be. 
 
@@ -169,14 +186,15 @@ for(i in 1:nrow(accuracy)){
   
 colMeans(accuracy)
 ```
+
 For the sake of curtailing runtime, the number of epochs has been set arbitrarily short but, from those results, `r Nbatch[which.max(colMeans(accuracy))]` is the best batch size. 
 
-# Making predictions for new data
+## Making predictions for new data
 
 TODO
 
 
-# Inputting a Compiled Keras Model
+## Using a compiled Keras model
 
 This section shows how to input a model compiled in the fashion typical to `library(keras)`, which is useful for more advanced models. Here is an example for `lstm` analogous to the [imbd wih Keras for example](https://tensorflow.rstudio.com/keras/articles/examples/imdb_lstm.html). 
 

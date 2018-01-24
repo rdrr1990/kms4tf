@@ -57,7 +57,7 @@ Let's suppose we are interested in putting tweets into categories based on popul
 
 ```{r helper}
 n <- function(x) {
-  sapply(x, length)
+  unlist(lapply(x, function(y){length(y) - is.na(y[1])}))
 }
 ```
 
@@ -65,12 +65,12 @@ Let's start with a dense neural net, the default of `kms`. We can use base R fun
 
 ```{r first_model}
 breaks <- c(-1, 0, 1, 10, 100, 1000, 10000)
-popularity <- kms("cut(retweet_count + favorite_count, breaks) ~ screen_name + source +  
+popularity <- kms(cut(retweet_count + favorite_count, breaks) ~ screen_name + source +  
                           n(hashtags) + n(mentions_screen_name) + 
                           n(urls_url) + nchar(text) +
                           grepl('photo', media_type) +
                           weekdays(created_at) + 
-                          format(created_at, '%H')", rstats)
+                          format(created_at, '%H'), rstats)
 plot(popularity$history) + ggtitle(paste("#rstat popularity:",
                                          paste0(round(100*popularity$evaluations$acc, 1), "%"),
                                          "out-of-sample accuracy")) + theme_minimal()
@@ -80,13 +80,13 @@ The model only classifies about `r scales::percent(popularity$evaluations$acc)` 
 
 ```{r change_breaks}
 breaks <- c(-1, 0, 1, 25, 50, 75, 100, 500, 1000, 10000)
-popularity <- kms("cut(retweet_count + favorite_count, breaks) ~  
+popularity <- kms(cut(retweet_count + favorite_count, breaks) ~  
                           n(hashtags) + n(mentions_screen_name) + n(urls_url) +
                           nchar(text) +
                           screen_name + source +
                           grepl('photo', media_type) +
                           weekdays(created_at) + 
-                          format(created_at, '%H')", rstats, Nepochs = 10)
+                          format(created_at, '%H'), rstats, Nepochs = 10)
 plot(popularity$history) + ggtitle(paste("#rstat popularity (new breakpoints):",
                                          paste0(round(100*popularity$evaluations$acc, 1), "%"),
                                          "out-of-sample accuracy")) + theme_minimal()
@@ -155,13 +155,14 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity (custom dense neural
 By default, `kms` uses batches of 32. Suppose we were happy with our model but didn't have any particular intuition about what the size should be. 
 
 ```{r accuracy}
-accuracy <- matrix(nrow = 4, ncol = 3)
 Nbatch <- c(16, 32, 64)
+Nruns <- 4
+accuracy <- matrix(nrow = Nruns, ncol = length(Nbatch))
 colnames(accuracy) <- paste0("Nbatch_", Nbatch)
 
 est <- list()
-for(i in 1:nrow(accuracy)){
-  for(j in 1:ncol(accuracy)){
+for(i in 1:Nruns){
+  for(j in 1:length(Nbatch)){
    est[[i]] <- kms(pop_input, rstats, Nepochs = 2, batch_size = Nbatch[j])
    accuracy[i,j] <- est[[i]][["evaluations"]][["acc"]]
   }
@@ -173,12 +174,26 @@ For the sake of curtailing runtime, the number of epochs has been set arbitraril
 
 # Making predictions for new data
 
-TODO
+Thus far, we have been using the default settings for `kms` which first splits data into 80\% training and 20\% testing. Of the 80\% training, a certain portion is set aside for validation and that's what produces the epoch-by-epoch graphs of loss and accuracy. The 20\% is only used at the end to assess predictive accuracy. 
+But suppose you wanted to make predictions on a new data set...
+ 
+```{r outofsample}
+popularity <- kms(pop_input, rstats[1:1000,])
+predictions <- predict(popularity, rstats[1001:2000,])
+predictions$confusion
+predictions$accuracy
+```
+
+
+Because the formula creates a dummy variable for each screen name and mention, any given set of tweets is all but guaranteed to have different columns. `predict.kms_fit` is an `S3 method` that takes the new data and constructs a (sparse) model matrix that preserves the original structure of the training matrix. `predict` then returns the predictions along with a confusion matrix and accuracy score.
+
+If your newdata has the same observed levels of y and columns of x_train (the model matrix), you can also use `keras::predict_classes` on `object$model`.  
+
 
 
 # Inputting a Compiled Keras Model
 
-This section shows how to input a model compiled in the fashion typical to `library(keras)`, which is useful for more advanced models. Here is an example for `lstm` analogous to the [imbd wih Keras for example](https://tensorflow.rstudio.com/keras/articles/examples/imdb_lstm.html). 
+This section shows how to input a model compiled in the fashion typical to `library(keras)`, which is useful for more advanced models. Here is an example for `lstm` analogous to the [imbd with Keras example](https://tensorflow.rstudio.com/keras/articles/examples/imdb_lstm.html). 
 
 ```{r lstm_ex, eval=FALSE}
 k <- keras_model_sequential()

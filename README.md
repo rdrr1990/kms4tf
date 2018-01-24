@@ -17,15 +17,14 @@ install_keras()                        # first time only. see ?install_keras() f
 library(rtweet)                        # see https://github.com/mkearney/rtweet
 ```
 
-Let's look at \#rstats tweets (excluding retweets) for a six-day period ending January 18, 2018 at 10:29. This happens to give us a nice reasonable number of observations to work with in terms of runtime (and the purpose of this document is to show syntax, not build particularly predictive models).
+Let's look at \#rstats tweets (excluding retweets) for a six-day period ending January 24, 2018 at 00:15. This happens to give us a nice reasonable number of observations to work with in terms of runtime (and the purpose of this document is to show syntax, not build particularly predictive models).
 
 ``` r
-library(rtweet)
 rstats <- search_tweets("#rstats", n = 10000, include_rts = FALSE)
 dim(rstats)
 ```
 
-    [1] 2831   42
+    [1] 2728   42
 
 Suppose our goal is to predict how popular tweets will be based on how often the tweet was retweeted and favorited (which correlate strongly).
 
@@ -33,7 +32,7 @@ Suppose our goal is to predict how popular tweets will be based on how often the
 cor(rstats$favorite_count, rstats$retweet_count, method="spearman")
 ```
 
-    [1] 0.7118774
+    [1] 0.7000378
 
 Since few tweeets go viral, the data are quite skewed towards zero.
 
@@ -45,11 +44,8 @@ Getting the Most out of Formulas
 Let's suppose we are interested in putting tweets into categories based on popularity but we're not sure how finely-grained we want to make distinctions. Some of the data, like `rstats$mentions_screen_name` comes in a list of varying lengths, so let's write a helper function to count non-NA entries.
 
 ``` r
-n <- function(x){
-  N <- matrix(nrow = length(x), 0)
-  for(i in which(!is.na(x)))
-    N[i] <- length(x[[i]])
-  return(N)
+n <- function(x) {
+  unlist(lapply(x, function(y){length(y) - is.na(y[1])}))
 }
 ```
 
@@ -57,12 +53,12 @@ Let's start with a dense neural net, the default of `kms`. We can use base R fun
 
 ``` r
 breaks <- c(-1, 0, 1, 10, 100, 1000, 10000)
-popularity <- kms("cut(retweet_count + favorite_count, breaks) ~ screen_name + source +  
+popularity <- kms(cut(retweet_count + favorite_count, breaks) ~ screen_name + source +  
                           n(hashtags) + n(mentions_screen_name) + 
                           n(urls_url) + nchar(text) +
                           grepl('photo', media_type) +
                           weekdays(created_at) + 
-                          format(created_at, '%H')", rstats)
+                          format(created_at, '%H'), rstats)
 plot(popularity$history) + ggtitle(paste("#rstat popularity:",
                                          paste0(round(100*popularity$evaluations$acc, 1), "%"),
                                          "out-of-sample accuracy")) + theme_minimal()
@@ -76,24 +72,24 @@ popularity$confusion
 
                    
                     (-1,0] (0,1] (1,10] (10,100] (100,1e+03] (1e+03,1e+04]
-      (-1,0]            29     5     33        1           0             0
-      (0,1]             16    27     70        0           0             0
-      (1,10]             2    17    187       24           0             0
-      (10,100]           1     0     75       59           0             0
-      (100,1e+03]        0     0     10        9           0             0
+      (-1,0]            40     4     29        2           0             0
+      (0,1]             28    18     64        2           0             0
+      (1,10]            10     5    191       22           0             0
+      (10,100]           0     2     54       48           3             0
+      (100,1e+03]        0     0      4       10           2             0
       (1e+03,1e+04]      0     0      0        0           0             0
 
-The model only classifies about 53% of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs.
+The model only classifies about 55.6% of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs.
 
 ``` r
 breaks <- c(-1, 0, 1, 25, 50, 75, 100, 500, 1000, 10000)
-popularity <- kms("cut(retweet_count + favorite_count, breaks) ~  
+popularity <- kms(cut(retweet_count + favorite_count, breaks) ~  
                           n(hashtags) + n(mentions_screen_name) + n(urls_url) +
                           nchar(text) +
                           screen_name + source +
                           grepl('photo', media_type) +
                           weekdays(created_at) + 
-                          format(created_at, '%H')", rstats, Nepochs = 10)
+                          format(created_at, '%H'), rstats, Nepochs = 10)
 plot(popularity$history) + ggtitle(paste("#rstat popularity (new breakpoints):",
                                          paste0(round(100*popularity$evaluations$acc, 1), "%"),
                                          "out-of-sample accuracy")) + theme_minimal()
@@ -120,7 +116,7 @@ Here we use `paste0` to add to the formula by looping over user IDs adding somet
 ``` r
 mentions <- unlist(rstats$mentions_user_id)
 mentions <- unique(mentions[which(table(mentions) > 5)]) # remove infrequent mentions
-mentions <- mentions[-1] # drop NA
+mentions <- mentions[!is.na(mentions)] # drop NA
 
 for(i in mentions)
   pop_input <- paste0(pop_input, " + ", "grepl(", i, ", mentions_user_id)")
@@ -141,7 +137,7 @@ The `input.formula` is used to create a sparse model matrix. For example, `rstat
 popularity$P
 ```
 
-    [1] 1216
+    [1] 1243
 
 Say we wanted to reshape the layers to transition more gradually from the input shape to the output.
 
@@ -162,13 +158,14 @@ Choosing a Batch Size
 By default, `kms` uses batches of 32. Suppose we were happy with our model but didn't have any particular intuition about what the size should be.
 
 ``` r
-accuracy <- matrix(nrow = 4, ncol = 3)
 Nbatch <- c(16, 32, 64)
+Nruns <- 4
+accuracy <- matrix(nrow = Nruns, ncol = length(Nbatch))
 colnames(accuracy) <- paste0("Nbatch_", Nbatch)
 
 est <- list()
-for(i in 1:nrow(accuracy)){
-  for(j in 1:ncol(accuracy)){
+for(i in 1:Nruns){
+  for(j in 1:length(Nbatch)){
    est[[i]] <- kms(pop_input, rstats, Nepochs = 2, batch_size = Nbatch[j])
    accuracy[i,j] <- est[[i]][["evaluations"]][["acc"]]
   }
@@ -178,14 +175,58 @@ colMeans(accuracy)
 ```
 
     Nbatch_16 Nbatch_32 Nbatch_64 
-    0.3998953 0.2563794 0.5479681 
+    0.3368697 0.4665254 0.3566179 
 
-For the sake of curtailing runtime, the number of epochs has been set arbitrarily short but, from those results, 64 is the best batch size.
+For the sake of curtailing runtime, the number of epochs has been set arbitrarily short but, from those results, 32 is the best batch size.
+
+Making predictions for new data
+===============================
+
+Thus far, we have been using the default settings for `kms` which first splits data into 80% training and 20% testing. Of the 80% training, a certain portion is set aside for validation and that's what produces the epoch-by-epoch graphs of loss and accuracy. The 20% is only used at the end to assess predictive accuracy. But suppose you wanted to make predictions on a new data set...
+
+``` r
+popularity <- kms(pop_input, rstats[1:1000,])
+predictions <- predict(popularity, rstats[1001:2000,])
+predictions$confusion
+```
+
+                   
+                    (-1,0] (0,1] (1,25] (25,50] (50,75] (75,100] (100,500]
+      (-1,0]            25    79     58       0       0        0         0
+      (0,1]              7    67    113       0       0        0         0
+      (1,25]             3    52    468       0       0        0         0
+      (25,50]            0     3     62       0       0        0         0
+      (50,75]            0     0     22       0       0        0         0
+      (75,100]           0     0     11       0       0        0         0
+      (100,500]          0     1     25       0       0        0         0
+      (500,1e+03]        0     0      4       0       0        0         0
+      (1e+03,1e+04]      0     0      0       0       0        0         0
+                   
+                    (500,1e+03] (1e+03,1e+04]
+      (-1,0]                  0             0
+      (0,1]                   0             0
+      (1,25]                  0             0
+      (25,50]                 0             0
+      (50,75]                 0             0
+      (75,100]                0             0
+      (100,500]               0             0
+      (500,1e+03]             0             0
+      (1e+03,1e+04]           0             0
+
+``` r
+predictions$accuracy
+```
+
+    [1] 0.56
+
+Because the formula creates a dummy variable for each screen name and mention, any given set of tweets is all but guaranteed to have different columns. `predict.kms_fit` is an `S3 method` that takes the new data and constructs a (sparse) model matrix that preserves the original structure of the training matrix. `predict` then returns the predictions along with a confusion matrix and accuracy score.
+
+If your newdata has the same observed levels of y and columns of x\_train (the model matrix), you can also use `keras::predict_classes` on `object$model`.
 
 Inputting a Compiled Keras Model
 ================================
 
-This section shows how to input a model compiled in the fashion typical to `library(keras)`, which is useful for more advanced models. Here is an example for `lstm` analogous to the [imbd wih Keras for example](https://tensorflow.rstudio.com/keras/articles/examples/imdb_lstm.html).
+This section shows how to input a model compiled in the fashion typical to `library(keras)`, which is useful for more advanced models. Here is an example for `lstm` analogous to the [imbd with Keras example](https://tensorflow.rstudio.com/keras/articles/examples/imdb_lstm.html).
 
 ``` r
 k <- keras_model_sequential()

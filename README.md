@@ -33,7 +33,7 @@ rstats <- search_tweets("#rstats", n = 10000, include_rts = FALSE)
 dim(rstats)
 ```
 
-    [1] 2840   42
+      [1] 2840   42
 
 Suppose our goal is to predict how popular tweets will be based on how often the tweet was retweeted and favorited (which correlate strongly).
 
@@ -41,7 +41,7 @@ Suppose our goal is to predict how popular tweets will be based on how often the
 cor(rstats$favorite_count, rstats$retweet_count, method="spearman")
 ```
 
-    [1] 0.7051952
+        [1] 0.7051952
 
 Since few tweeets go viral, the data are quite skewed towards zero.
 
@@ -71,24 +71,22 @@ popularity <- kms(cut(retweet_count + favorite_count, breaks) ~ screen_name + so
 plot(popularity$history) + ggtitle(paste("#rstat popularity:",
                                          paste0(round(100*popularity$evaluations$acc, 1), "%"),
                                          "out-of-sample accuracy")) + theme_minimal()
+popularity$confusion
 ```
 
 ![](README_files/figure-markdown_github-ascii_identifiers/first_model-1.png)
 
-``` r
-popularity$confusion
-```
+    popularity$confusion
 
-                   
-                    (-1,0] (0,1] (1,10] (10,100] (100,1e+03] (1e+03,1e+04]
-      (-1,0]            37    12     28        2           0             0
-      (0,1]             14    19     72        1           0             0
-      (1,10]             6    11    187       30           0             0
-      (10,100]           1     3     54       68           0             0
-      (100,1e+03]        0     0      4       10           0             0
-      (1e+03,1e+04]      0     0      0        1           0             0
+                        (-1,0] (0,1] (1,10] (10,100] (100,1e+03] (1e+03,1e+04]
+          (-1,0]            37    12     28        2           0             0
+          (0,1]             14    19     72        1           0             0
+          (1,10]             6    11    187       30           0             0
+          (10,100]           1     3     54       68           0             0
+          (100,1e+03]        0     0      4       10           0             0
+          (1e+03,1e+04]      0     0      0        1           0             0
 
-The model only classifies about 55.5% of the out-of-sample data correctly. The confusion matrix suggests that model does best with tweets that aren't retweeted but struggles with others. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs.
+The model only classifies about 55% of the out-of-sample data correctly and that predictive accuracy doesn't improve after the first ten epochs. The confusion matrix suggests that model does best with tweets that are retweeted a handful of times but overpredicts the 1-10 level. The `history` plot also suggests that out-of-sample accuracy is not very stable. We can easily change the breakpoints and number of epochs.
 
 ``` r
 breaks <- c(-1, 0, 1, 25, 50, 75, 100, 500, 1000, 10000)
@@ -106,7 +104,7 @@ plot(popularity$history) + ggtitle(paste("#rstat popularity (new breakpoints):",
 
 ![](README_files/figure-markdown_github-ascii_identifiers/change_breaks-1.png)
 
-Suppose we want to add a little more data. Let's first store the input formula.
+That helped some (about 5% additional predictive accuracy). Suppose we want to add a little more data. Let's first store the input formula.
 
 ``` r
 pop_input <- "cut(retweet_count + favorite_count, breaks) ~  
@@ -135,6 +133,8 @@ popularity <- kms(pop_input, rstats)
 
 ![](README_files/figure-markdown_github-ascii_identifiers/mentionsplot-1.png)
 
+That helped a touch but the predictive accuracy is still fairly unstable across epochs...
+
 Customizing layers with kms()
 -----------------------------
 
@@ -146,7 +146,7 @@ The `input.formula` is used to create a sparse model matrix. For example, `rstat
 popularity$P
 ```
 
-    [1] 1277
+        [1] 1277
 
 Say we wanted to reshape the layers to transition more gradually from the input shape to the output.
 
@@ -183,10 +183,10 @@ for(i in 1:Nruns){
 colMeans(accuracy)
 ```
 
-    Nbatch_16 Nbatch_32 Nbatch_64 
-    0.5088407 0.3820850 0.5556952 
+        Nbatch_16 Nbatch_32 Nbatch_64 
+        0.5088407 0.3820850 0.5556952 
 
-For the sake of curtailing runtime, the number of epochs has been set arbitrarily short but, from those results, 64 is the best batch size.
+For the sake of curtailing runtime, the number of epochs was set arbitrarily short but, from those results, 64 is the best batch size.
 
 Making predictions for new data
 -------------------------------
@@ -199,7 +199,7 @@ predictions <- predict(popularity, rstats[1001:2000,])
 predictions$accuracy
 ```
 
-    [1] 0.579
+        [1] 0.579
 
 ``` r
 # predictions$confusion
@@ -236,4 +236,4 @@ popularity_lstm <- kms(pop_input, rstats, k)
 Questions? Comments?
 ====================
 
-Drop me a line via the project's [Github repo](https://github.com/rdrr1990/kerasformula). Special thanks to @dfalbel and @jjallaire for helpful suggestions.
+Drop me a line via the project's [Github repo](https://github.com/rdrr1990/kerasformula). Special thanks to @dfalbel and @jjallaire for helpful suggestions!!
